@@ -1,0 +1,56 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/openjdk:11.0.2-jdk-browsers
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            # when lock file changes, use increasingly general patterns to restore cache
+            - gradle-repo-v1-{{ .Branch }}-{{ checksum "build.gradle" }}
+            - gradle-repo-v1-{{ .Branch }}-
+            - gradle-repo-v1-
+      - run:
+          name: Library check
+          command: |
+            gradle dependencies
+      - save_cache:
+          paths:
+            - ~/.gradle
+          key: gradle-repo-v1-{{ .Branch }}-{{ checksum "build.gradle" }}
+      - run:
+          name: Run Tests
+          command: gradle test
+      - run:
+          name: Save test results
+          command: |
+            mkdir -p ~/test-results/junit/
+            find . -type f -regex ".*/build/test-results/.*xml" -exec cp -p {} ~/test-results/junit/ \;
+            mkdir -p ~/test-results/reports/
+            find . -type d -regex ".*/build/reports" -exec cp -rp {} ~/test-results/ \;
+          when: always
+      - store_test_results:
+          path: ~/test-results
+      - store_artifacts:
+          path: ~/test-results/junit
+      - store_artifacts:
+          path: ~/test-results/reports
+workflows:
+  version: 2
+  # push時のテスト実行用（workflowを使用すると、このworkflow(triggersの設定がなくjobを指定した)がないとpush時にjobが実行されない）
+  normal_workflow:
+    jobs:
+      - build
+  # スケジュールテスト実行用
+  schedule_workflow:
+    triggers:
+      - schedule:
+          cron: "1 3 1 * *" # UTCで記述。-9hours
+          filters:
+            branches:
+              only:
+                - master
+    jobs:
+      - build
